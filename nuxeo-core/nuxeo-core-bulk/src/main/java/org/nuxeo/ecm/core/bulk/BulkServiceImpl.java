@@ -23,23 +23,23 @@ import static org.nuxeo.ecm.core.bulk.BulkComponent.BULK_KV_STORE_NAME;
 import static org.nuxeo.ecm.core.bulk.BulkComponent.BULK_LOG_MANAGER_NAME;
 import static org.nuxeo.ecm.core.bulk.BulkStatus.State.COMPLETED;
 import static org.nuxeo.ecm.core.bulk.BulkStatus.State.SCHEDULED;
-import static org.nuxeo.ecm.core.bulk.StreamBulkProcessor.COUNTER_ACTION_NAME;
-import static org.nuxeo.ecm.core.bulk.StreamBulkProcessor.KVWRITER_ACTION_NAME;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Collection;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.nuxeo.ecm.core.bulk.BulkStatus.State;
 import org.nuxeo.lib.stream.computation.Record;
 import org.nuxeo.lib.stream.log.LogAppender;
 import org.nuxeo.lib.stream.log.LogManager;
 import org.nuxeo.runtime.api.Framework;
 import org.nuxeo.runtime.kv.KeyValueService;
 import org.nuxeo.runtime.kv.KeyValueStore;
+import org.nuxeo.runtime.kv.KeyValueStoreProvider;
 import org.nuxeo.runtime.stream.StreamService;
 
 /**
@@ -108,7 +108,7 @@ public class BulkServiceImpl implements BulkService {
             if (COMPLETED.equals(BulkCodecs.getBulkStatusCodec().decode(kvStore.get(commandId + STATUS)).getState())) {
                 return true;
             }
-            Thread.sleep(500);
+            Thread.sleep(100);
         } while (deadline > System.currentTimeMillis());
         log.debug("await timeout for commandId(" + commandId + ") after " + duration.toMillis() + " ms");
         return false;
@@ -120,26 +120,15 @@ public class BulkServiceImpl implements BulkService {
 
     @Override
     public boolean await(Duration duration) throws InterruptedException {
-        StreamService service = Framework.getService(StreamService.class);
-        LogManager logManager = service.getLogManager(BULK_LOG_MANAGER_NAME);
-        BulkAdminService admin = Framework.getService(BulkAdminService.class);
-        Collection<String> actions = admin.getActions();
-        Collection<String> streams = new ArrayList<>(actions.size() + 3);
-        streams.add(DOCUMENTSET_ACTION_NAME);
-        streams.addAll(actions);
-        streams.add(COUNTER_ACTION_NAME);
-        streams.add(KVWRITER_ACTION_NAME);
-        long deadline = System.currentTimeMillis() + duration.toMillis();
-        for (String stream : streams) {
-            // when there is no lag between producer and consumer we are done
-            while (logManager.getLag(stream, stream).lag() > 0) {
-                if (System.currentTimeMillis() > deadline) {
-                    return false;
-                }
-                Thread.sleep(50);
+        KeyValueStoreProvider kv = (KeyValueStoreProvider) getKvStore();
+        Set<String> commandIds = kv.keyStream()
+                                   .filter(k -> k.endsWith(STATUS))
+                                   .map(k -> k.replaceFirst(STATUS, ""))
+                                   .collect(Collectors.toSet());
+        for (String id : commandIds) {
+            while (getStatus(id).getState() != State.COMPLETED) {
+                Thread.sleep(100);
             }
-            // we wait for records to be actually passed to next stream
-            Thread.sleep(100);
         }
         return true;
     }

@@ -84,11 +84,13 @@ public class WorkComputation extends AbstractComputation {
     public void processRecord(ComputationContext context, String inputStreamName, Record record) {
         work = deserialize(record.getData());
         try {
-            if (work.isIdempotent() && workIds.contains(work.getId())) {
+            if (work.isCoalescing() && WorkStateHelper.getLastOffset(work.getId()) > context.getLastOffset()) {
+                log.warn("Coalescing work id with new instance scheduled: " + work.getId() + ", skipping");
+            } else if (work.isIdempotent() && workIds.contains(work.getId())) {
                 log.warn("Duplicate work id: " + work.getId() + " skipping");
             } else {
-                boolean storeState = Boolean.parseBoolean(
-                        Framework.getService(ConfigurationService.class).getProperty(STORESTATE_KEY));
+                boolean storeState = Framework.getService(ConfigurationService.class)
+                                              .isBooleanPropertyTrue(STORESTATE_KEY);
                 if (storeState) {
                     if (WorkStateHelper.getState(work.getId()) != Work.State.SCHEDULED) {
                         log.warn("work has been canceled, saving and returning");
@@ -99,7 +101,11 @@ public class WorkComputation extends AbstractComputation {
                 }
                 new WorkHolder(work).run();
                 if (storeState) {
-                    WorkStateHelper.setState(work.getId(), null, stateTTL);
+                    // if another work with same id exists we set the state to SCHEDULED, null otherwise
+                    Work.State state = WorkStateHelper.getLastOffset(work.getId()) > context.getLastOffset()
+                            ? Work.State.SCHEDULED
+                            : null;
+                    WorkStateHelper.setState(work.getId(), state, stateTTL);
                 }
                 workIds.add(work.getId());
             }

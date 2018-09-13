@@ -395,4 +395,14 @@ public interface Work extends Serializable {
         return true;
     }
 
+    /**
+     * Returns true if only the last scheduled work with a given {@link #getId()} should be executed. The WorkManager
+     * implementation can safely skip executions of coalesing work until the last with a given {@link #getId()}.
+     *
+     * @since 10.3
+     */
+    default boolean isCoalescing() {
+        return false;
+    }
+
 }

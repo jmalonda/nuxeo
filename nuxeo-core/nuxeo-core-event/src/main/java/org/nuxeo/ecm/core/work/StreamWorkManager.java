@@ -53,6 +53,7 @@ import org.nuxeo.lib.stream.computation.log.LogStreamProcessor;
 import org.nuxeo.lib.stream.log.LogAppender;
 import org.nuxeo.lib.stream.log.LogLag;
 import org.nuxeo.lib.stream.log.LogManager;
+import org.nuxeo.lib.stream.log.LogOffset;
 import org.nuxeo.runtime.api.Framework;
 import org.nuxeo.runtime.codec.CodecService;
 import org.nuxeo.runtime.metrics.NuxeoMetricSet;
@@ -169,7 +170,11 @@ public class StreamWorkManager extends WorkManagerImpl {
             return;
         }
         String key = work.getPartitionKey();
-        appender.append(key, Record.of(key, WorkComputation.serialize(work)));
+        LogOffset offset = appender.append(key, Record.of(key, WorkComputation.serialize(work)));
+        // we store offset to handle coalescing works or state storage when several works with same id are scheduled
+        if (work.isCoalescing() || storeState) {
+            WorkStateHelper.setLastOffset(work.getId(), offset.offset(), stateTTL);
+        }
         if (storeState) {
             WorkStateHelper.setState(work.getId(), Work.State.SCHEDULED, stateTTL);
         }

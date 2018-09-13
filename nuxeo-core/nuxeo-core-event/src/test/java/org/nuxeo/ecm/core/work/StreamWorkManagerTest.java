@@ -150,4 +150,21 @@ public class StreamWorkManagerTest extends AbstractWorkManagerTest {
         super.testNoConcurrentJobsWithSameId();
     }
 
+    @Test
+    public void testCoalescingWorks() throws InterruptedException {
+        SleepWork work1 = new SleepWork(getDurationMillis());
+        work1.setIdempotent(false);
+        assertFalse(work1.isIdempotent());
+        work1.setCoalescing(true);
+        assertTrue(work1.isCoalescing());
+        service.schedule(work1);
+        service.schedule(work1);
+        service.schedule(work1);
+        service.schedule(work1);
+        service.schedule(work1);
+        // coalescing works are not executed only
+        assertTrue(service.awaitCompletion(getDurationMillis(), TimeUnit.MILLISECONDS));
+        tracker.assertDiff(0, 0, 5, 0);
+    }
+
 }

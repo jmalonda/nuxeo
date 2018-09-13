@@ -66,4 +66,10 @@ public interface ComputationContext {
      * @since 10.1
      */
     void askForTermination();
+
+    /**
+     * @return the offset of the last record read.
+     * @since 10.3
+     */
+    long getLastOffset();
 }

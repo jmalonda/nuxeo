@@ -45,6 +45,8 @@ public class ComputationContextImpl implements ComputationContext {
 
     protected boolean terminateFlag;
 
+    protected long lastOffset;
+
     public ComputationContextImpl(ComputationMetadataMapping metadata) {
         this.metadata = metadata;
         this.timers = new HashMap<>();
@@ -77,6 +79,14 @@ public class ComputationContextImpl implements ComputationContext {
             throw new IllegalArgumentException("Stream not registered as output: " + targetStream + ":" + streamName);
         }
         streamRecords.computeIfAbsent(targetStream, key -> new ArrayList<>()).add(record);
+    }
+
+    public long getLastOffset() {
+        return lastOffset;
+    }
+
+    public void setLastOffset(long lastOffset) {
+        this.lastOffset = lastOffset;
     }
 
     public long getSourceLowWatermark() {

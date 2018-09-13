@@ -32,7 +32,6 @@ import java.util.stream.Collectors;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.nuxeo.ecm.core.bulk.BulkStatus.State;
 import org.nuxeo.lib.stream.computation.Record;
 import org.nuxeo.lib.stream.log.LogAppender;
 import org.nuxeo.lib.stream.log.LogManager;
@@ -102,14 +101,14 @@ public class BulkServiceImpl implements BulkService {
 
     @Override
     public boolean await(String commandId, Duration duration) throws InterruptedException {
-        long deadline = System.currentTimeMillis() + duration.toMillis();
-        KeyValueStore kvStore = getKvStore();
+        // nanoTime is always monotonous
+        long deadline = System.nanoTime() + duration.toNanos();
         do {
-            if (COMPLETED.equals(BulkCodecs.getBulkStatusCodec().decode(kvStore.get(commandId + STATUS)).getState())) {
+            if (getStatus(commandId).getState() != COMPLETED) {
                 return true;
             }
             Thread.sleep(100);
-        } while (deadline > System.currentTimeMillis());
+        } while (deadline > System.nanoTime());
         log.debug("await timeout for commandId(" + commandId + ") after " + duration.toMillis() + " ms");
         return false;
     }
@@ -120,14 +119,19 @@ public class BulkServiceImpl implements BulkService {
 
     @Override
     public boolean await(Duration duration) throws InterruptedException {
+        // nanoTime is always monotonous
+        long deadline = System.nanoTime() + duration.toNanos();
         KeyValueStoreProvider kv = (KeyValueStoreProvider) getKvStore();
         Set<String> commandIds = kv.keyStream()
-                                   .filter(k -> k.endsWith(STATUS))
-                                   .map(k -> k.replaceFirst(STATUS, ""))
+                                   .filter(key -> key.endsWith(STATUS))
+                                   .map(key -> key.replaceFirst(STATUS, ""))
                                    .collect(Collectors.toSet());
-        for (String id : commandIds) {
-            while (getStatus(id).getState() != State.COMPLETED) {
+        for (String commandId : commandIds) {
+            while (getStatus(commandId).getState() != COMPLETED) {
                 Thread.sleep(100);
+                if (deadline < System.nanoTime()) {
+                    return false;
+                }
             }
         }
         return true;
